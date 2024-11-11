@@ -1,0 +1,103 @@
+spark.sql("""
+    CREATE TABLE iceberg_db.test_table1 (id INT, name STRING)
+    USING iceberg
+    LOCATION 's3a://warehouse/test_table1/'
+""")
+spark.sql("CREATE DATABASE if not exists iceberg_db")
+spark.sql("SHOW TABLES IN iceberg_db")
+spark.sql("SHOW DATABASES").show()
+
+spark.conf.get("spark.sql.catalog.iceberg") // Check if it points to the correct catalog
+
+
+val df = spark.range(1, 10).withColumn("name", lit("test"))
+df.write
+  .format("parquet")
+  .mode("overwrite")
+  .option("path", "s3a://warehouse/test-path/")
+  .save()
+
+
+spark.sql("CREATE TABLE iceberg_db.test_table1 (id INT, name STRING) USING iceberg LOCATION 's3a://warehouse/iceberg_db/test_table1'")
+
+import org.apache.spark.sql.SparkSession
+val spark = SparkSession.builder()
+  .appName("IcebergTest")
+  .config("spark.sql.catalog.iceberg", "org.apache.iceberg.spark.SparkCatalog")
+  .config("spark.sql.catalog.iceberg.type", "hive")
+  .config("spark.sql.catalog.iceberg.uri", "thrift://hive-metastore:9083")
+  .config("spark.sql.catalog.iceberg.warehouse", "s3a://warehouse/") // Use s3a URI for MinIO
+  .config("spark.hadoop.fs.s3a.access.key", "minioadmin")
+  .config("spark.hadoop.fs.s3a.secret.key", "minioadmin")
+  .config("spark.hadoop.fs.s3a.endpoint", "http://minio:9000") // MinIO endpoint
+  .config("spark.hadoop.fs.s3a.path.style.access", "true") // Required for MinIO
+  .getOrCreate()
+
+  spark.sql("DESCRIBE FORMATTED iceberg_db.test_table").show(truncate = false)
+
+  spark.sql("SHOW TABLES IN iceberg_db").show()
+
+
+./bin/spark-shell \
+  --packages org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.5.0 \
+  --conf spark.sql.catalog.iceberg=org.apache.iceberg.spark.SparkCatalog \
+  --conf spark.sql.catalog.iceberg.type=hive \
+  --conf spark.sql.catalog.iceberg.uri=thrift://hive-metastore:9083 \
+  --conf spark.sql.catalog.iceberg.warehouse=s3a://warehouse/ \
+  --conf spark.hadoop.fs.s3a.access.key=minioadmin \
+  --conf spark.hadoop.fs.s3a.secret.key=minioadmin \
+  --conf spark.hadoop.fs.s3a.endpoint=http://minio:9000 \
+  --conf spark.hadoop.fs.s3a.path.style.access=true
+
+
+SET fs.s3a.access.key=minioadmin;
+SET fs.s3a.secret.key=minioadmin;
+SET fs.s3a.endpoint=http://minio:9000;
+SET fs.s3a.connection.maximum=100;
+
+CREATE EXTERNAL TABLE test_table (id INT)
+STORED AS PARQUET
+LOCATION 's3a://warehouse/test/';
+
+image: bde2020/hive:2.3.2-postgresql-metastore
+- ./jars/hadoop:/opt/hive/extra-libs  # Mount to a different directory
+
+docker cp ./pipeline.py spark-master:/opt/bitnami/spark
+docker cp ./data.csv spark-master:/opt/bitnami/spark/data
+docker exec -it spark-master /opt/bitnami/spark/bin/spark-submit /opt/bitnami/spark/pipeline.py
+
+docker exec -it spark-master /opt/bitnami/spark/bin/spark-submit \
+--packages org.apache.hadoop:hadoop-aws:3.3.4,org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.0,org.apache.iceberg:iceberg-hive-runtime:1.5.0 \
+/opt/bitnami/spark/pipeline.py
+
+
+__SPARK_NO_DAEMONIZE=true
+
+jupyter notebook --ip 0.0.0.0 --port 8888 --no-browser --allow-root
+
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder \
+    .appName("Iceberg Integration") \
+    .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions") \
+    .config("spark.sql.catalog.data", "org.apache.iceberg.spark.SparkCatalog") \
+    .config("spark.sql.catalog.data.type", "hive") \
+    .config("spark.sql.catalog.data.uri", "jdbc:postgresql://pg-catalog:5432/iceberg") \
+    .config("spark.sql.catalog.data.warehouse", "s3://iceberg-data") \
+    .config("spark.hadoop.fs.s3a.endpoint", "http://minio:9000") \
+    .config("spark.hadoop.fs.s3a.access.key", "user") \
+    .config("spark.hadoop.fs.s3a.secret.key", "password") \
+    .config("spark.hadoop.fs.s3a.path.style.access", "true") \
+    .getOrCreate()
+
+/opt/spark/jars
+
+curl "https://jdbc.postgresql.org/download/postgresql-42.6.0.jar" -o "postgresql-42.6.0.jar" \
+    && mv postgresql-42.6.0.jar "/opt/spark/jars/postgresql-42.6.0.jar"
+
+import org.apache.spark.sql.SparkSession
+    val spark = SparkSession.builder()
+  .appName("Iceberg Job")
+  .config("spark.executor.memory", "1G")    // Memory per executor
+  .config("spark.executor.cores", "1")      // Cores per executor
+  .getOrCreate()

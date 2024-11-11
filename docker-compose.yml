@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  spark-iceberg:
+    image: tabulario/spark-iceberg
+    container_name: spark-iceberg
+    build: ./spark
+    entrypoint: ['./entrypoint.sh', 'master' ]
+    env_file:
+      - spark/.env
+    environment:
+    - SPARK_NO_DAEMONIZE=true
+    volumes:
+      - ./warehouse:/home/iceberg/warehouse
+      - ./notebooks:/home/iceberg/notebooks
+      - ./data:/opt/spark/data
+      - ./spark_apps:/opt/spark/apps
+      - spark-logs:/opt/spark/spark-events
+      - ./spark/spark-defaults-minio.conf:/opt/spark/conf/spark-defaults.conf
+    ports:
+      - '8888:8888'
+      - '8080:8080'
+      - '10000:10000'
+      - '10001:10001'
+
+
+  spark-worker:
+    image: tabulario/spark-iceberg
+    container_name: spark-worker
+    entrypoint: [ './entrypoint.sh', 'worker' ]
+    depends_on:
+      - spark-iceberg
+    env_file:
+      - spark/.env
+    environment:
+      - SPARK_WORKER_CORES=2      # Number of CPU cores allocated to this worker
+      - SPARK_WORKER_MEMORY=2G     # Amount of memory allocated to this worker
+      - SPARK_NO_DAEMONIZE=true
+      - SPARK_MASTER_URL=spark://spark-master:7077   # Explicitly set master URL
+    volumes:
+      - ./data:/opt/spark/data
+      - ./warehouse:/home/iceberg/warehouse
+      - ./spark_apps:/opt/spark/apps
+      - spark-logs:/opt/spark/spark-events
+    ports:
+      - '8081:8081'
+
+  spark-history-server:
+    container_name: spark-history
+    image: tabulario/spark-iceberg
+    entrypoint: [ './entrypoint.sh', 'history' ]
+    depends_on:
+      - spark-iceberg
+    env_file:
+      - spark/.env
+    environment:
+      - SPARK_NO_DAEMONIZE=true
+    volumes:
+      - spark-logs:/opt/spark/spark-events
+    ports:
+      - '18080:18080'
+
+
+volumes:
+  spark-logs:
